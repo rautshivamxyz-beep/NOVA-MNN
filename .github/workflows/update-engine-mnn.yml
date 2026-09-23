@@ -1,0 +1,105 @@
+name: Build MNN engine AAR
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install NDK and Android SDK packages
+        run: |
+          SDKMANAGER="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK=${ANDROID_HOME}/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Clone MNN
+        run: |
+          git clone -q --depth 1 https://github.com/alibaba/MNN.git /tmp/mnn
+          echo "MNN_COMMIT=$(git -C /tmp/mnn rev-parse --short HEAD)" >> "$GITHUB_ENV"
+
+      - name: Build MNN for Android arm64 (CPU, lean LLM)
+        run: |
+          mkdir -p /tmp/mnn/build_64
+          cd /tmp/mnn/build_64
+          cmake /tmp/mnn \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DANDROID_ABI="arm64-v8a" \
+            -DANDROID_STL=c++_static \
+            -DANDROID_NATIVE_API_LEVEL=android-24 \
+            -DMNN_LOW_MEMORY=ON \
+            -DMNN_CPU_WEIGHT_DEQUANT_GEMM=ON \
+            -DMNN_BUILD_LLM=ON \
+            -DMNN_SUPPORT_TRANSFORMER_FUSE=ON \
+            -DMNN_ARM82=ON \
+            -DMNN_SEP_BUILD=OFF \
+            -DMNN_BUILD_BENCHMARK=OFF \
+            -DMNN_BUILD_TEST=OFF \
+            -DMNN_BUILD_DEMO=OFF \
+            -DMNN_BUILD_OPENCV=OFF \
+            -DMNN_IMGCODECS=OFF \
+            -DMNN_OPENCL=OFF \
+            -DMNN_VULKAN=OFF \
+            -DLLM_SUPPORT_VISION=OFF \
+            -DMNN_BUILD_AUDIO=OFF \
+            -DMNN_BUILD_DIFFUSION=OFF \
+            -DBUILD_PLUGIN=OFF \
+            -DMNN_QNN=OFF \
+            -DCMAKE_SHARED_LINKER_FLAGS='-Wl,-z,max-page-size=16384'
+          make -j4
+          find /tmp/mnn/build_64 -name "libMNN.so" -exec ls -lh {} \;
+
+      - name: Build the NOVA-MNN JNI wrapper
+        run: |
+          CLANG=$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++
+          $CLANG -std=c++17 -O2 -fPIC -shared \
+            -I/tmp/mnn/include \
+            -I/tmp/mnn/transformers/llm/engine/include \
+            -I/tmp/mnn/3rd_party \
+            -landroid -llog \
+            tmp/mnn/nova_mnn_jni.cpp \
+            -L/tmp/mnn/build_64 -lMNN \
+            -Wl,-z,max-page-size=16384 \
+            -o /tmp/libnova-mnn.so
+          ls -lh /tmp/libnova-mnn.so
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Package mnn-release.aar
+        run: |
+          mkdir -p /tmp/mnnlib/mnnlib/src/main/java/org/nova/mnn
+          mkdir -p /tmp/mnnlib/mnnlib/src/main/jniLibs/arm64-v8a
+          cp tmp/mnn/MnnEngine.java /tmp/mnnlib/mnnlib/src/main/java/org/nova/mnn/
+          cp /tmp/libnova-mnn.so /tmp/mnnlib/mnnlib/src/main/jniLibs/arm64-v8a/
+          cp /tmp/mnn/build_64/libMNN.so /tmp/mnnlib/mnnlib/src/main/jniLibs/arm64-v8a/
+          cp tmp/mnn/mnnlib_build.gradle /tmp/mnnlib/mnnlib/build.gradle
+          cp tmp/mnn/mnnlib_settings.gradle /tmp/mnnlib/settings.gradle
+          cd /tmp/mnnlib
+          gradle :mnnlib:assembleRelease --no-daemon
+          cp mnnlib/build/outputs/aar/mnnlib-release.aar "$GITHUB_WORKSPACE/android/app/libs/mnn-release.aar"
+          ls -lh "$GITHUB_WORKSPACE/android/app/libs/mnn-release.aar"
+
+      - name: Commit engine
+        run: |
+          git config user.name "rautshivamxyz-beep"
+          git config user.email "rautshivamxyz@gmail.com"
+          git add android/app/libs/mnn-release.aar
+          git commit -m "MNN engine AAR (commit $MNN_COMMIT, CPU arm64, LLM, low-memory)"
+          git push
