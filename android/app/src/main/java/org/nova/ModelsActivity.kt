@@ -329,14 +329,14 @@ class ModelsActivity : Activity() {
         localInner.removeAllViews()
 
         val dir = ModelCatalog.modelsDir(this)
-        val models = dir.listFiles { f: File -> f.name.endsWith(".gguf") }
+        val models = dir.listFiles { f: File -> f.isDirectory && File(f, "config.json").exists() }
             ?.sortedBy { it.name.lowercase(Locale.ROOT) }
             ?: emptyList()
         val activePath = NovaEngine.activeModelPath
 
         if (models.isEmpty()) {
             localInner.addView(TextView(this).apply {
-                text = "No models yet — download one above, or import a .gguf file.\n\n" +
+                text = "No models yet — download one above (MNN models only).\n\n" +
                     "Everything stays on this device. NOVA works fully offline."
                 setTextColor(textDim)
                 textSize = 13f
@@ -353,7 +353,7 @@ class ModelsActivity : Activity() {
                 typeface = Typeface.DEFAULT_BOLD
             })
             localInner.addView(TextView(this).apply {
-                text = "${m.name} · ${m.length() / (1000L * 1000 * 1000)} GB"
+                text = "${m.name} · ${ModelCatalog.sizeOf(m) / (1000L * 1000 * 1000)} GB"
                 setTextColor(textDim)
                 textSize = 11f
             })
@@ -375,13 +375,13 @@ class ModelsActivity : Activity() {
     // ------------------------------------------------------------- actions
 
     private fun confirmAndLoad(f: File) {
-        val fit = DeviceCapabilities.fitFor(f.length(), this)
+        val fit = DeviceCapabilities.fitFor(ModelCatalog.sizeOf(f), this)
         if (fit == DeviceCapabilities.Fit.TOO_BIG) {
             AlertDialog.Builder(this)
                 .setTitle("Large model")
                 .setMessage(
                     "This model may be too large for this device " +
-                        "(${f.length() / (1000L * 1000 * 1000)} GB file, " +
+                        "(${ModelCatalog.sizeOf(f) / (1000L * 1000 * 1000)} GB model, " +
                         "${"%.1f".format(DeviceCapabilities.totalRamGb(this))} GB RAM). " +
                         "It may fail to load or be killed by the system. Try anyway?"
                 )
@@ -416,14 +416,14 @@ class ModelsActivity : Activity() {
     private fun confirmAndDelete(f: File) {
         AlertDialog.Builder(this)
             .setTitle("Delete model?")
-            .setMessage("${f.name} (${f.length() / (1000L * 1000 * 1000)} GB) will be permanently removed.")
+            .setMessage("${f.name} (${ModelCatalog.sizeOf(f) / (1000L * 1000 * 1000)} GB) will be permanently removed.")
             .setPositiveButton("Delete") { _, _ ->
                 scope.launch {
                     if (NovaEngine.activeModelPath == f.absolutePath) {
                         NovaEngine.unload(this@ModelsActivity)
                     }
                     withContext(Dispatchers.IO) {
-                        f.delete()
+                        if (f.isDirectory) f.deleteRecursively() else f.delete()
                         File(f.absolutePath + ".part").delete()
                     }
                     if (settings.lastModelPath == f.absolutePath) {
