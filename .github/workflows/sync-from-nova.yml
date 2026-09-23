@@ -14,16 +14,13 @@ jobs:
       - name: Copy NOVA and rename app
         run: |
           set -e
-          # keep this workflow file across the wipe
-          cp .github/workflows/sync-from-nova.yml /tmp/sync.yml
-          git clone -q --depth 1 https://github.com/rautshivamxyz-beep/NOVA.git nova-src
-          rm -rf nova-src/.git nova-src/tmp
-          rm -f nova-src/.github/workflows/restore-main.yml nova-src/.github/workflows/update-engine.yml nova-src/.github/workflows/build-aar.yml
+          # clone OUTSIDE the workspace so the wipe below cannot delete it
+          git clone -q --depth 1 https://github.com/rautshivamxyz-beep/NOVA.git /tmp/nova-src
+          rm -rf /tmp/nova-src/.git /tmp/nova-src/tmp
+          rm -f /tmp/nova-src/.github/workflows/restore-main.yml /tmp/nova-src/.github/workflows/update-engine.yml /tmp/nova-src/.github/workflows/build-aar.yml
           # wipe everything here except .git
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
-          cp -a nova-src/. .
-          mkdir -p .github/workflows
-          cp /tmp/sync.yml .github/workflows/sync-from-nova.yml
+          cp -a /tmp/nova-src/. .
           # parallel-installable sibling: different appId + launcher name
           sed -i "s/applicationId 'org.nova'/applicationId 'org.nova.mnn'/" android/app/build.gradle
           sed -i 's|<string name="app_name">NOVA</string>|<string name="app_name">NOVA MNN</string>|' android/app/src/main/res/values/strings.xml
