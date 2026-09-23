@@ -4,7 +4,6 @@ on:
 
 permissions:
   contents: write
-  workflows: write
 
 jobs:
   sync:
@@ -18,7 +17,9 @@ jobs:
           # clone OUTSIDE the workspace so the wipe below cannot delete it
           git clone -q --depth 1 https://github.com/rautshivamxyz-beep/NOVA.git /tmp/nova-src
           rm -rf /tmp/nova-src/.git /tmp/nova-src/tmp
-          rm -f /tmp/nova-src/.github/workflows/restore-main.yml /tmp/nova-src/.github/workflows/update-engine.yml /tmp/nova-src/.github/workflows/build-aar.yml
+          # workflow files cannot be pushed by the GITHUB_TOKEN - they are
+          # added separately through the API afterwards
+          rm -rf /tmp/nova-src/.github/workflows
           # wipe everything here except .git
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
           cp -a /tmp/nova-src/. .
