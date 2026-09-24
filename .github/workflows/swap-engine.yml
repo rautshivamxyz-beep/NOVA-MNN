@@ -13,16 +13,16 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Apply fix
-        run: python3 tmp/mnn/apply_fix2.py
+        run: python3 tmp/mnn/apply_fix3.py
 
       - name: Verify
         run: |
-          echo "c657085af83e5214df92652dac89dbb0  android/app/src/main/java/org/nova/ModelsActivity.kt" | md5sum -c -
+          echo "d65bff402ae56111ea56c1dc2ce23924  android/app/src/main/java/org/nova/ModelsActivity.kt" | md5sum -c -
 
       - name: Commit
         run: |
           git config user.name "rautshivamxyz-beep"
           git config user.email "rautshivamxyz@gmail.com"
           git add android/app/src/main/java/org/nova/ModelsActivity.kt
-          git commit -m "Catalog size display: one decimal (0.5 GB not 0 GB)"
+          git commit -m "ModelsActivity: Import downloaded MNN folder (SAF tree picker) + URL hint"
           git push
