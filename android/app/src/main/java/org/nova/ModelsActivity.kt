@@ -289,7 +289,7 @@ class ModelsActivity : Activity() {
             textSize = 13f
         })
         val meta = TextView(this).apply {
-            text = "${entry.org} · ${entry.quant} · ${entry.sizeBytes / (1000L * 1000 * 1000)} GB · " +
+            text = "${entry.org} · ${entry.quant} · ${"%.1f".format(entry.sizeBytes / (1000.0 * 1000 * 1000))} GB · " +
                 "needs ~${entry.minRamGb} GB RAM\n${entry.notes}"
             setTextColor(textDim)
             textSize = 12f
