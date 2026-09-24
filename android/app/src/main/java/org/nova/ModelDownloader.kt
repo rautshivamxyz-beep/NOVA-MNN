@@ -64,10 +64,19 @@ object ModelDownloader {
         job?.cancel()
     }
 
-    /** True when the URL is a Hugging Face model REPO (no file in it). */
-    fun isRepoUrl(url: String): Boolean =
-        url.startsWith("https://huggingface.co/") &&
-            !url.substringAfterLast('/').substringBefore('?').contains('.')
+    /** True when the URL is a Hugging Face model REPO (no file in it).
+     *  Repo names may contain dots (Qwen2.5-1.5B-Instruct-MNN), so we
+     *  look at the path shape instead: owner/repo with no /resolve/,
+     *  /blob/ or extra segments means a repo. */
+    fun isRepoUrl(url: String): Boolean {
+        if (!url.startsWith("https://huggingface.co/")) return false
+        val path = url.removePrefix("https://huggingface.co/")
+            .substringBefore('?').trim('/')
+        if (path.isEmpty()) return false
+        val segs = path.split('/')
+        if (segs.size != 2) return false // direct file links have more segments
+        return !segs[1].lowercase().endsWith(".gguf")
+    }
 
     /**
      * Starts a download of either shape. Only one transfer runs at a
