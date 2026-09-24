@@ -1,5 +1,8 @@
 package org.nova
 
+import android.content.ContentResolver
+import android.net.Uri
+import android.provider.DocumentsContract
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -91,9 +94,95 @@ object ModelDownloader {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 _state.value = State.Idle
             } catch (e: Exception) {
-                _state.value = State.Failed(fileNameFromUrl(url), e.message ?: "download failed")
+                _state.value = if (cancelled)
+                    State.Failed(fileNameFromUrl(url), "stopped - tap Download again to resume")
+                else
+                    State.Failed(fileNameFromUrl(url), e.message ?: "download failed")
             }
         }
+    }
+
+    /**
+     * Imports a user-picked folder (an MNN model downloaded by hand, e.g.
+     * in the browser) into the models directory. Copies every file in
+     * the folder; requires a config.json to accept it as a model.
+     */
+    fun importTree(resolver: ContentResolver, treeUri: Uri, folderName: String, dir: File) {
+        if (isBusy) return
+        cancelled = false
+        job = scope.launch {
+            try {
+                _state.value = doImportTree(resolver, treeUri, folderName, dir)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                _state.value = State.Idle
+            } catch (e: Exception) {
+                _state.value = if (cancelled)
+                    State.Failed(folderName, "stopped - folder kept, import again to resume")
+                else
+                    State.Failed(folderName, e.message ?: "import failed")
+            }
+        }
+    }
+
+    private suspend fun doImportTree(
+        resolver: ContentResolver,
+        treeUri: Uri,
+        folderName: String,
+        dir: File
+    ): State = withContext(Dispatchers.IO) {
+        val rootDoc = DocumentsContract.getTreeDocumentId(treeUri)
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, rootDoc)
+        val files = ArrayList<Triple<Uri, String, Long>>()
+        resolver.query(
+            childrenUri,
+            arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_SIZE
+            ),
+            null, null, null
+        )?.use { c ->
+            while (c.moveToNext()) {
+                val id = c.getString(0) ?: continue
+                val name = c.getString(1) ?: continue
+                if (name == ".gitattributes" || name.endsWith(".md") || name.endsWith(".part")) continue
+                val size = if (c.isNull(2)) -1L else c.getLong(2)
+                val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                files.add(Triple(docUri, name, size))
+            }
+        }
+        if (files.none { it.second == "config.json" })
+            throw IOException("no config.json in that folder - is it a downloaded MNN model?")
+        val known = files.map { it.third }.filter { it > 0 }
+        val total = if (known.size == files.size) known.sum() else -1L
+        val modelDir = File(dir, if (folderName.isBlank()) "imported-model-mnn" else folderName)
+        modelDir.mkdirs()
+        var done = 0L
+        for ((uri, name, sz) in files) {
+            val dest = File(modelDir, name)
+            val part = File(modelDir, name + ".part")
+            var copied = 0L
+            resolver.openInputStream(uri)?.use { ins ->
+                FileOutputStream(part).use { out ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        if (cancelled) throw IOException("cancelled")
+                        val n = ins.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        copied += n
+                        _state.value = State.Importing(name, done + copied, if (total > 0) total else -1L)
+                    }
+                    out.fd.sync()
+                }
+            } ?: throw IOException("cannot read $name")
+            if (!part.renameTo(dest)) {
+                part.copyTo(dest, overwrite = true)
+                part.delete()
+            }
+            done += if (sz > 0) sz else copied
+        }
+        State.Done(modelDir)
     }
 
     /**
