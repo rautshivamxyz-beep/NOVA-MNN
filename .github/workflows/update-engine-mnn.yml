@@ -26,10 +26,12 @@ jobs:
           echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/27.2.12479018" >> "$GITHUB_ENV"
           echo "ANDROID_NDK=${ANDROID_HOME}/ndk/27.2.12479018" >> "$GITHUB_ENV"
 
-      - name: Clone MNN
+      - name: Clone MNN (pinned)
         run: |
           git clone -q --depth 1 https://github.com/alibaba/MNN.git /tmp/mnn
-          echo "MNN_COMMIT=$(git -C /tmp/mnn rev-parse --short HEAD)" >> "$GITHUB_ENV"
+          git -C /tmp/mnn fetch -q --depth 1 origin 67450001627fc91232779068d85933c22845fae5
+          git -C /tmp/mnn checkout -q 67450001627fc91232779068d85933c22845fae5
+          echo "MNN_COMMIT=6745000" >> "$GITHUB_ENV"
 
       - name: Build MNN for Android arm64 (CPU, lean LLM)
         run: |
@@ -90,6 +92,9 @@ jobs:
           cp tmp/mnn/MnnEngine.java /tmp/mnnlib/mnnlib/src/main/java/org/nova/mnn/
           cp /tmp/libnova-mnn.so /tmp/mnnlib/mnnlib/src/main/jniLibs/arm64-v8a/
           cp /tmp/mnn/build_64/libMNN.so /tmp/mnnlib/mnnlib/src/main/jniLibs/arm64-v8a/
+          # the wrapper links the shared C++ runtime - bundle it
+          cp "$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" \
+            /tmp/mnnlib/mnnlib/src/main/jniLibs/arm64-v8a/
           cp tmp/mnn/mnnlib_build.gradle /tmp/mnnlib/mnnlib/build.gradle
           cp tmp/mnn/mnnlib_settings.gradle /tmp/mnnlib/settings.gradle
           cd /tmp/mnnlib
@@ -102,5 +107,5 @@ jobs:
           git config user.name "rautshivamxyz-beep"
           git config user.email "rautshivamxyz@gmail.com"
           git add android/app/libs/mnn-release.aar
-          git commit -m "MNN engine AAR (commit $MNN_COMMIT, CPU arm64, LLM, low-memory)"
+          git commit -m "MNN engine AAR v2 (commit $MNN_COMMIT, chat template + prompt cache + libc++_shared)"
           git push
