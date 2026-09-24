@@ -18,11 +18,11 @@ public class MnnEngine {
         return handle != 0;
     }
 
-    public boolean init(String configPath, int threads) {
+    public boolean init(String configPath, int threads, String systemPrompt) {
         if (handle != 0) {
             release();
         }
-        handle = initNative(configPath, threads);
+        handle = initNative(configPath, threads, systemPrompt);
         return handle != 0;
     }
 
@@ -65,7 +65,7 @@ public class MnnEngine {
         }
     }
 
-    private native long initNative(String configPath, int threads);
+    private native long initNative(String configPath, int threads, String systemPrompt);
     private native void submitNative(long handle, String prompt, int maxTokens);
     private native void stopNative(long handle);
     private native void resetNative(long handle);
