@@ -156,13 +156,13 @@ class ModelsActivity : Activity() {
         }
         // custom URL + import
         catInner.addView(TextView(this).apply {
-            text = "Any other GGUF (Hugging Face URL)"
+            text = "Any other model (Hugging Face URL)"
             setTextColor(textDim)
             textSize = 12f
             setPadding(0, dp(14), 0, dp(6))
         })
         customUrl = EditText(this).apply {
-            hint = "https://huggingface.co/.../model-Q4_K_M.gguf"
+            hint = "https://huggingface.co/taobao-mnn/Llama-3.2-1B-Instruct-MNN"
             setHintTextColor(textDim)
             setTextColor(textMain)
             textSize = 13f
@@ -190,14 +190,9 @@ class ModelsActivity : Activity() {
         catInner.addView(customBtn, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(8) })
-        val importBtn = smallButton("Import local .gguf file", textDim)
+        val importBtn = smallButton("Import downloaded MNN folder", textDim)
         importBtn.setOnClickListener {
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = "*/*"
-                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("*/*"))
-            }
-            startActivityForResult(intent, REQ_PICK_GGUF)
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQ_PICK_MNN_DIR)
         }
         catInner.addView(importBtn, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -446,6 +441,9 @@ class ModelsActivity : Activity() {
         if (requestCode == REQ_PICK_GGUF && resultCode == Activity.RESULT_OK) {
             data?.data?.let { importPicked(it) }
         }
+        if (requestCode == REQ_PICK_MNN_DIR && resultCode == Activity.RESULT_OK) {
+            data?.data?.let { importTreePicked(it) }
+        }
     }
 
     private fun importPicked(uri: Uri) {
@@ -486,6 +484,23 @@ class ModelsActivity : Activity() {
                 ModelDownloader.import(name, opener, size, ModelCatalog.modelsDir(this@ModelsActivity))
             }
         }
+    }
+
+    /** Picks a folder the user downloaded by hand and imports it as a model. */
+    private fun importTreePicked(uri: Uri) {
+        var folder = "imported-model-mnn"
+        try {
+            contentResolver.query(uri, null, null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0) c.getString(idx)?.let { if (it.isNotBlank()) folder = it }
+                }
+            }
+        } catch (e: Exception) {
+            // keep the default folder name
+        }
+        toast("Importing $folder - keep this screen open")
+        ModelDownloader.importTree(contentResolver, uri, folder, ModelCatalog.modelsDir(this))
     }
 
     // ---------------------------------------------------------- downloader
@@ -567,5 +582,6 @@ class ModelsActivity : Activity() {
 
     companion object {
         private const val REQ_PICK_GGUF = 4242
+        private const val REQ_PICK_MNN_DIR = 4243
     }
 }
