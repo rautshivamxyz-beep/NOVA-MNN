@@ -1,4 +1,4 @@
-name: Apply MNN ModelsActivity edits
+name: Apply MNN source fix
 on:
   workflow_dispatch:
 
@@ -12,17 +12,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Apply anchor edits
-        run: python3 tmp/mnn/apply_ma_edits.py
+      - name: Apply fix
+        run: python3 tmp/mnn/apply_fix2.py
 
       - name: Verify
         run: |
-          echo "1289da005d8a48333b8f0818e5fe6215  android/app/src/main/java/org/nova/ModelsActivity.kt" | md5sum -c -
+          echo "c657085af83e5214df92652dac89dbb0  android/app/src/main/java/org/nova/ModelsActivity.kt" | md5sum -c -
 
       - name: Commit
         run: |
           git config user.name "rautshivamxyz-beep"
           git config user.email "rautshivamxyz@gmail.com"
           git add android/app/src/main/java/org/nova/ModelsActivity.kt
-          git commit -m "ModelsActivity: MNN model dirs, dir-aware sizes, recursive delete"
+          git commit -m "Catalog size display: one decimal (0.5 GB not 0 GB)"
           git push
