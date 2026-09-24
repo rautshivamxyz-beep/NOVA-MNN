@@ -22,6 +22,8 @@ import java.io.File
  * Same public surface as the llama.cpp version, so the rest of the
  * app is unchanged. Loading runs in [scope], which lives as long as
  * the process - leaving the Models screen never cancels a load.
+ * The system prompt is a real system message; turns go through MNN's
+ * chat template (proper turn boundaries, EOS stopping, prompt cache).
  */
 object NovaEngine {
 
@@ -47,10 +49,6 @@ object NovaEngine {
 
     @Volatile
     private var engine: MnnEngine? = null
-
-    /** System prompt to prepend to the first generation after a load. */
-    @Volatile
-    private var pendingSystem: String = ""
 
     /** True while a generation is streaming - load() waits for it. */
     @Volatile
@@ -137,13 +135,13 @@ object NovaEngine {
         else File(path, "config.json").let { if (it.exists()) it.absolutePath else path }
         unloadInternal()
         val eng = MnnEngine()
-        val ok = withContext(Dispatchers.IO) { eng.init(configPath, bigCores()) }
+        val sys = (systemPrompt + thinkingHint(path, label)).trim()
+        val ok = withContext(Dispatchers.IO) { eng.init(configPath, bigCores(), sys) }
         if (!ok) {
             try { eng.release() } catch (e: Exception) { }
             throw IllegalStateException("MNN could not load $configPath")
         }
         engine = eng
-        pendingSystem = (systemPrompt + thinkingHint(path, label)).trim()
         activeModelPath = path
         activeModelLabel = label
         contextDirty = false
@@ -192,16 +190,13 @@ object NovaEngine {
     fun send(message: String, predictLength: Int): Flow<String> = callbackFlow {
         val eng = requireNotNull(engine) { "No model loaded" }
         contextDirty = true
-        val sys = pendingSystem
-        if (sys.isNotEmpty()) pendingSystem = ""
         eng.listener = MnnEngine.TokenListener { t ->
             trySend(t)
         }
         busy = true
         launch(Dispatchers.IO) {
             try {
-                val full = if (sys.isNotEmpty()) sys + "\n\n" + message else message
-                eng.submit(full, if (predictLength > 0) predictLength else 2048)
+                eng.submit(message, if (predictLength > 0) predictLength else 2048)
             } catch (e: Exception) {
                 close(e)
             } finally {
